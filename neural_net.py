@@ -6,43 +6,57 @@ losses_avg = []
 
 
 class NeuralNet:
-    def __init__(self, hidden_size, learning_rate):
+    def __init__(self, sizes, learning_rate):
         self.learning_rate = learning_rate
-        self.weights1 = 2 * np.random.random((hidden_size, 2)) - 1
-        self.biases1 = 2 * np.random.random(hidden_size) - 1
-        self.weights2 = 2 * np.random.random((1, hidden_size)) - 1
-        self.biases2 = 2 * np.random.random(1) - 1
+        self.weights = [2 * np.random.random((sizes[i], sizes[i - 1])) - 1 for i in range(1, len(sizes))]
+        self.biases = [2 * np.random.random(sizes[i]) - 1 for i in range(1, len(sizes))]
 
     def feedforward(self, x):
-        self.a1 = sigmoid(np.dot(self.weights1, x) + self.biases1)
-        self.output = sigmoid(np.dot(self.weights2, self.a1) + self.biases2)
+        z_all = []
+        a_all = [x]
+        cur_a = x
+        for w, b in zip(self.weights, self.biases):
+            z = np.dot(w, cur_a) + b
+            z_all.append(z)
+            a = sigmoid(z)
+            a_all.append(a)
+            cur_a = a
 
-    def backprop(self, x, y):
-        d_out = d_mse_loss(self.output, y)
-        d_out_zout = d_sigmoid(np.dot(self.weights2, self.a1) + self.biases2)
-        d_z2 = d_out * d_out_zout
+        return z_all, a_all
 
-        self.d_biases2 = d_z2
-        self.d_weights2 = np.dot(d_z2.reshape((-1, 1)), self.a1.reshape((1, -1)))
+    def backprop(self, x, z_all, a_all, y):
+        d_biases = np.zeros_like(self.biases)
+        d_weights = np.zeros_like(self.weights)
 
-        d_a1 = np.dot(d_z2, self.weights2)
-        d_a1_z1 = d_sigmoid(np.dot(self.weights1, x) + self.biases1)
-        d_z1 = d_a1 * d_a1_z1
+        d_aL = d_mse_loss(a_all[-1], y)
+        d_out_zL = d_sigmoid(z_all[-1])
+        d_zL = d_aL * d_out_zL
 
-        self.d_weights1 = np.dot(d_z1.reshape((-1, 1)), x.reshape((1, -1)))
-        self.d_biases1 = d_z1
+        d_biases[-1] = d_zL
+        d_weights[-1] = np.dot(d_zL.reshape((-1, 1)), a_all[-2].reshape((1, -1)))
+
+        d_zl = d_zL
+
+        for l in range(len(self.weights) - 2, -1, -1):
+            d_al = np.dot(d_zl, self.weights[l+1])
+            d_al_zl = d_sigmoid(z_all[l])
+            d_zl = d_al * d_al_zl
+
+            d_weights[l] = np.dot(d_zl.reshape((-1, 1)), a_all[l].reshape((1, -1)))
+            d_biases[l] = d_zl
+
+        return d_weights, d_biases
+
 
     def step(self, x, y):
-        self.feedforward(x)
-        self.backprop(x, y)
+        z_all, a_all = self.feedforward(x)
+        d_weights, d_biases = self.backprop(x, z_all, a_all, y)
 
-        loss = mse_loss(self.output, y)
+        loss = mse_loss(a_all[-1], y)
         epoch_losses.append(loss)
 
-        self.weights2 -= self.learning_rate * self.d_weights2
-        self.biases2 -= self.learning_rate * self.d_biases2
-        self.weights1 -= self.learning_rate * self.d_weights1
-        self.biases1 -= self.learning_rate * self.d_biases1
+        self.weights -= self.learning_rate * d_weights
+        self.biases -= self.learning_rate * d_biases
 
     def train(self, x, y, epochs):
         for epoch in range(epochs):
@@ -52,8 +66,8 @@ class NeuralNet:
             losses_avg.append(sum(epoch_losses) / 4)
 
     def predict(self, x):
-        self.feedforward(x)
-        print("input={}, predicted={}".format(x, self.output))
+        _, a_all = self.feedforward(x)
+        print("input={}, predicted={}".format(x, a_all[-1]))
 
 
 def sigmoid(x):
@@ -74,7 +88,7 @@ def d_mse_loss(output, labels):
 
 x = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
 y = np.array([0, 1, 1, 0])
-net = NeuralNet(5, 0.1)
+net = NeuralNet((2, 5, 1), 0.1)
 net.train(x, y, 6000)
 
 net.predict([0, 0])
